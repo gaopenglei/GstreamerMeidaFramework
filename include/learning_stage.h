@@ -1,0 +1,18 @@
+#ifndef LEARNING_STAGE_H
+#define LEARNING_STAGE_H
+
+/*
+ * 编译期学习阶段。通过 CMake 参数设置，例如：
+ * cmake -S . -B build -DMEDIA_FRAMEWORK_STAGE=1
+ */
+#define MEDIA_FRAMEWORK_STAGE_M0 0
+#define MEDIA_FRAMEWORK_STAGE_M1 1
+
+#ifndef MEDIA_FRAMEWORK_STAGE
+#define MEDIA_FRAMEWORK_STAGE MEDIA_FRAMEWORK_STAGE_M0
+#endif
+
+#define MEDIA_FRAMEWORK_STAGE_AT_LEAST(stage) \
+    (MEDIA_FRAMEWORK_STAGE >= (stage))
+
+#endif /* LEARNING_STAGE_H */

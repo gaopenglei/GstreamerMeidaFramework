@@ -2,6 +2,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(gstreamer_media_framework VERSION 1.0.0 LANGUAGES C)
 
+# 学习阶段：0=M0 工程基线，1=M1 GStreamer 基础机制
+set(MEDIA_FRAMEWORK_STAGE "0" CACHE STRING "Learning stage to build (0 or higher)")
+if(NOT MEDIA_FRAMEWORK_STAGE MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "MEDIA_FRAMEWORK_STAGE must be a non-negative integer")
+endif()
+add_compile_definitions(MEDIA_FRAMEWORK_STAGE=${MEDIA_FRAMEWORK_STAGE})
+
 # 设置 C 标准
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -113,6 +120,12 @@ if(BUILD_TESTS)
     add_test(NAME test_recorder COMMAND test_recorder)
 endif()
 
+# 分阶段学习示例
+if(MEDIA_FRAMEWORK_STAGE GREATER_EQUAL 1)
+    add_subdirectory(examples/stage1)
+    message(STATUS "  Stage 1 guide: ${CMAKE_SOURCE_DIR}/docs/STAGE1.md")
+endif()
+
 # 打印配置信息
 message(STATUS "")
 message(STATUS "GStreamer Media Framework Configuration:")
@@ -120,4 +133,5 @@ message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  GStreamer version: ${GST_VERSION}")
 message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Learning stage: M${MEDIA_FRAMEWORK_STAGE}")
 message(STATUS "")
