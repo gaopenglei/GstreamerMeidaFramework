@@ -9,6 +9,8 @@
 #include <gst/gst.h>
 #include <gst/pbutils/pbutils.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -47,6 +49,14 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data);
 static GstElement *create_video_encoder(VideoCodec codec, const VideoParams *params);
 static GstElement *create_audio_encoder(AudioCodec codec, const AudioParams *params);
 static GstElement *create_muxer(ContainerFormat format);
+
+static GstPad *request_muxer_pad(GstElement *muxer, const char *name) {
+#if GST_CHECK_VERSION(1, 20, 0)
+    return gst_element_request_pad_simple(muxer, name);
+#else
+    return gst_element_get_request_pad(muxer, name);
+#endif
+}
 
 /**
  * @brief 初始化录制器配置为默认值
@@ -266,6 +276,7 @@ static GstElement *create_muxer(ContainerFormat format) {
  * @brief GStreamer 消息总线回调
  */
 static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
+    (void)bus;
     MediaRecorder *recorder = (MediaRecorder *)data;
     
     switch (GST_MESSAGE_TYPE(message)) {
@@ -307,6 +318,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             if (GST_MESSAGE_SRC(message) == GST_OBJECT(recorder->pipeline)) {
                 GstState old_state, new_state, pending_state;
                 gst_message_parse_state_changed(message, &old_state, &new_state, &pending_state);
+                (void)pending_state;
                 
                 LOG_DEBUG("Recorder state changed: %s -> %s",
                          gst_element_state_get_name(old_state),
@@ -334,6 +346,8 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
  * @brief 创建录制器
  */
 MediaRecorder *recorder_create(const RecorderConfig *config) {
+    gst_init(NULL, NULL);
+
     MediaRecorder *recorder = (MediaRecorder *)malloc(sizeof(MediaRecorder));
     if (recorder == NULL) {
         LOG_ERROR("Failed to allocate memory for recorder");
@@ -380,6 +394,10 @@ void recorder_destroy(MediaRecorder *recorder) {
         
         if (recorder->bus_watch_id > 0) {
             g_source_remove(recorder->bus_watch_id);
+        }
+        if (recorder->bus != NULL) {
+            gst_object_unref(recorder->bus);
+            recorder->bus = NULL;
         }
         
         gst_object_unref(recorder->pipeline);
@@ -576,7 +594,7 @@ static MediaErrorCode build_pipeline(MediaRecorder *recorder) {
         }
         
         /* 链接视频编码器到复用器 */
-        GstPad *video_pad = gst_element_get_request_pad(recorder->muxer, "video_%u");
+        GstPad *video_pad = request_muxer_pad(recorder->muxer, "video_%u");
         GstPad *enc_src = gst_element_get_static_pad(recorder->video_enc, "src");
         if (gst_pad_link(enc_src, video_pad) != GST_PAD_LINK_OK) {
             LOG_ERROR("Failed to link video encoder to muxer");
@@ -613,7 +631,7 @@ static MediaErrorCode build_pipeline(MediaRecorder *recorder) {
         }
         
         /* 链接音频编码器到复用器 */
-        GstPad *audio_pad = gst_element_get_request_pad(recorder->muxer, "audio_%u");
+        GstPad *audio_pad = request_muxer_pad(recorder->muxer, "audio_%u");
         GstPad *enc_src = gst_element_get_static_pad(recorder->audio_enc, "src");
         if (gst_pad_link(enc_src, audio_pad) != GST_PAD_LINK_OK) {
             LOG_ERROR("Failed to link audio encoder to muxer");
@@ -642,7 +660,6 @@ static MediaErrorCode build_pipeline(MediaRecorder *recorder) {
     /* 设置消息总线 */
     recorder->bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
     recorder->bus_watch_id = gst_bus_add_watch(recorder->bus, bus_callback, recorder);
-    gst_object_unref(recorder->bus);
     
     LOG_INFO("Recording pipeline built successfully");
     return MEDIA_OK;
@@ -766,7 +783,7 @@ MediaErrorCode recorder_stop(MediaRecorder *recorder) {
     
     /* 等待 EOS 消息 */
     GstMessage *msg = gst_bus_timed_pop_filtered(recorder->bus,
-                                                  GST_CLOCK_TIME_NONE,
+                                                  5 * GST_SECOND,
                                                   GST_MESSAGE_EOS | GST_MESSAGE_ERROR);
     
     if (msg != NULL) {
@@ -801,6 +818,8 @@ MediaErrorCode recorder_stop(MediaRecorder *recorder) {
         g_source_remove(recorder->bus_watch_id);
         recorder->bus_watch_id = 0;
     }
+    gst_object_unref(recorder->bus);
+    recorder->bus = NULL;
     
     gst_object_unref(recorder->pipeline);
     recorder->pipeline = NULL;
@@ -928,7 +947,7 @@ int recorder_enum_video_devices(char devices[][256], int max_count) {
     
     while ((entry = readdir(dir)) != NULL && count < max_count) {
         if (strncmp(entry->d_name, "video", 5) == 0) {
-            snprintf(devices[count], 256, "/dev/%s", entry->d_name);
+            snprintf(devices[count], 256, "/dev/%.250s", entry->d_name);
             count++;
         }
     }

@@ -8,6 +8,9 @@
 #include "logger.h"
 #include <gst/gst.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /**
  * @brief 媒体控制器结构体定义
@@ -31,6 +34,7 @@ struct MediaController {
 static void player_state_callback(MediaPlayer *player, MediaState state, void *user_data);
 static void recorder_state_callback(MediaRecorder *recorder, MediaState state, void *user_data);
 static void transcoder_state_callback(MediaTranscoder *transcoder, MediaState state, void *user_data);
+static MediaErrorCode controller_stop_unlocked(MediaController *controller);
 
 /**
  * @brief 初始化控制器配置为默认值
@@ -64,6 +68,7 @@ void controller_callbacks_init(ControllerCallbacks *callbacks) {
  * @brief 播放器状态回调
  */
 static void player_state_callback(MediaPlayer *player, MediaState state, void *user_data) {
+    (void)player;
     MediaController *controller = (MediaController *)user_data;
     
     controller->state = state;
@@ -78,6 +83,7 @@ static void player_state_callback(MediaPlayer *player, MediaState state, void *u
  * @brief 录制器状态回调
  */
 static void recorder_state_callback(MediaRecorder *recorder, MediaState state, void *user_data) {
+    (void)recorder;
     MediaController *controller = (MediaController *)user_data;
     
     controller->state = state;
@@ -92,6 +98,7 @@ static void recorder_state_callback(MediaRecorder *recorder, MediaState state, v
  * @brief 转码器状态回调
  */
 static void transcoder_state_callback(MediaTranscoder *transcoder, MediaState state, void *user_data) {
+    (void)transcoder;
     MediaController *controller = (MediaController *)user_data;
     
     controller->state = state;
@@ -217,12 +224,13 @@ void controller_destroy(MediaController *controller) {
     
     /* 销毁互斥锁 */
     pthread_mutex_destroy(&controller->mutex);
-    
+
+    LOG_INFO("Media controller destroyed");
+
     /* 关闭日志 */
     logger_shutdown();
     
     free(controller);
-    LOG_INFO("Media controller destroyed");
 }
 
 /**
@@ -289,7 +297,7 @@ MediaErrorCode controller_play(MediaController *controller, const char *uri) {
     
     /* 停止当前操作 */
     if (controller->current_operation != OPERATION_NONE) {
-        controller_stop(controller);
+        controller_stop_unlocked(controller);
     }
     
     LOG_INFO("Playing: %s", uri);
@@ -407,7 +415,14 @@ MediaErrorCode controller_stop(MediaController *controller) {
     }
     
     pthread_mutex_lock(&controller->mutex);
-    
+
+    MediaErrorCode ret = controller_stop_unlocked(controller);
+
+    pthread_mutex_unlock(&controller->mutex);
+    return ret;
+}
+
+static MediaErrorCode controller_stop_unlocked(MediaController *controller) {
     MediaErrorCode ret = MEDIA_OK;
     
     switch (controller->current_operation) {
@@ -435,8 +450,7 @@ MediaErrorCode controller_stop(MediaController *controller) {
     
     controller->current_operation = OPERATION_NONE;
     controller->state = MEDIA_STATE_READY;
-    
-    pthread_mutex_unlock(&controller->mutex);
+
     return ret;
 }
 
@@ -457,7 +471,7 @@ MediaErrorCode controller_start_recording(MediaController *controller,
     
     /* 停止当前操作 */
     if (controller->current_operation != OPERATION_NONE) {
-        controller_stop(controller);
+        controller_stop_unlocked(controller);
     }
     
     LOG_INFO("Starting recording to: %s", config->output_file);
@@ -509,7 +523,7 @@ MediaErrorCode controller_start_transcoding(MediaController *controller,
     
     /* 停止当前操作 */
     if (controller->current_operation != OPERATION_NONE) {
-        controller_stop(controller);
+        controller_stop_unlocked(controller);
     }
     
     LOG_INFO("Starting transcoding: %s -> %s", config->input_file, config->output_file);

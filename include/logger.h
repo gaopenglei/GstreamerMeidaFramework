@@ -71,12 +71,17 @@ typedef struct {
 extern Logger *g_logger;
 
 /**
+ * @brief 初始化日志配置为默认值
+ * @param config 配置结构体指针
+ */
+void logger_config_init(LoggerConfig *config);
+
+/**
  * @brief 初始化日志记录器
  * @param config 日志配置
- * @param module_name 模块名称
  * @return 成功返回0，失败返回-1
  */
-int logger_init(const LoggerConfig *config, const char *module_name);
+int logger_init(const LoggerConfig *config);
 
 /**
  * @brief 关闭日志记录器

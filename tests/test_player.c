@@ -62,7 +62,7 @@ int test_player_config(void) {
     PlayerConfig config;
     player_config_init(&config);
     
-    TEST_ASSERT(config.low_latency == 0, "Default low_latency");
+    TEST_ASSERT(config.low_latency == 1, "Default low_latency");
     TEST_ASSERT(config.buffer_duration > 0, "Default buffer_duration");
     TEST_ASSERT(strlen(config.video_sink) > 0, "Default video_sink");
     TEST_ASSERT(strlen(config.audio_sink) > 0, "Default audio_sink");

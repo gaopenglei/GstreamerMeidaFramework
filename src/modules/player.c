@@ -10,6 +10,8 @@
 #include <gst/video/video.h>
 #include <gst/audio/audio.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 /**
@@ -82,6 +84,7 @@ void player_callbacks_init(PlayerCallbacks *callbacks) {
  * @brief GStreamer 消息总线回调
  */
 static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
+    (void)bus;
     MediaPlayer *player = (MediaPlayer *)data;
     
     switch (GST_MESSAGE_TYPE(message)) {
@@ -110,7 +113,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
         
         case GST_MESSAGE_EOS: {
             LOG_INFO("End of stream reached");
-            player->state = MEDIA_STATE_READY;
+            player->state = MEDIA_STATE_EOS;
             
             if (player->callbacks.on_event) {
                 MediaEvent event = {
@@ -122,7 +125,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             }
             
             if (player->callbacks.on_state_changed) {
-                player->callbacks.on_state_changed(player, MEDIA_STATE_READY,
+                player->callbacks.on_state_changed(player, MEDIA_STATE_EOS,
                                                    player->callbacks.user_data);
             }
             break;
@@ -132,6 +135,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             if (GST_MESSAGE_SRC(message) == GST_OBJECT(player->playbin)) {
                 GstState old_state, new_state, pending_state;
                 gst_message_parse_state_changed(message, &old_state, &new_state, &pending_state);
+                (void)pending_state;
                 
                 LOG_DEBUG("State changed: %s -> %s",
                          gst_element_state_get_name(old_state),
@@ -215,18 +219,6 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             }
             
             gst_tag_list_unref(tags);
-            break;
-        }
-        
-        case GST_MESSAGE_SEEK_DONE: {
-            LOG_DEBUG("Seek completed");
-            if (player->callbacks.on_event) {
-                MediaEvent event = {
-                    .type = MEDIA_EVENT_SEEK_DONE,
-                    .message = "Seek completed"
-                };
-                player->callbacks.on_event(&event, player->callbacks.user_data);
-            }
             break;
         }
         
@@ -314,6 +306,8 @@ static void parse_stream_info(MediaPlayer *player) {
  * @brief 创建播放器
  */
 MediaPlayer *player_create(const PlayerConfig *config) {
+    gst_init(NULL, NULL);
+
     MediaPlayer *player = (MediaPlayer *)malloc(sizeof(MediaPlayer));
     if (player == NULL) {
         LOG_ERROR("Failed to allocate memory for player");
@@ -414,6 +408,8 @@ MediaErrorCode player_open(MediaPlayer *player, const char *uri) {
     }
     
     g_object_set(player->playbin, "uri", real_uri, NULL);
+    g_object_set(player->playbin, "volume", player->volume, "mute",
+                 player->mute ? TRUE : FALSE, NULL);
     strncpy(player->media_info.uri, real_uri, sizeof(player->media_info.uri) - 1);
     g_free(real_uri);
     
@@ -465,6 +461,19 @@ MediaErrorCode player_open(MediaPlayer *player, const char *uri) {
     
     LOG_INFO("Media opened successfully");
     return MEDIA_OK;
+}
+
+MediaErrorCode player_set_uri(MediaPlayer *player, const char *uri) {
+    if (player == NULL || uri == NULL) {
+        return MEDIA_ERROR_INVALID_PARAM;
+    }
+
+    MediaErrorCode ret = player_close(player);
+    if (ret != MEDIA_OK) {
+        return ret;
+    }
+
+    return player_open(player, uri);
 }
 
 /**
@@ -668,14 +677,16 @@ MediaErrorCode player_get_media_info(MediaPlayer *player, MediaInfo *info) {
  * @brief 设置音量
  */
 MediaErrorCode player_set_volume(MediaPlayer *player, double volume) {
-    if (player == NULL || player->playbin == NULL) {
+    if (player == NULL) {
         return MEDIA_ERROR_INVALID_PARAM;
     }
     
     if (volume < 0.0) volume = 0.0;
     if (volume > 1.0) volume = 1.0;
     
-    g_object_set(player->playbin, "volume", volume, NULL);
+    if (player->playbin != NULL) {
+        g_object_set(player->playbin, "volume", volume, NULL);
+    }
     player->volume = volume;
     
     return MEDIA_OK;
@@ -685,27 +696,31 @@ MediaErrorCode player_set_volume(MediaPlayer *player, double volume) {
  * @brief 获取音量
  */
 double player_get_volume(MediaPlayer *player) {
-    if (player == NULL || player->playbin == NULL) {
+    if (player == NULL) {
         return 0.0;
     }
+
+    if (player->playbin != NULL) {
+        gdouble volume;
+        g_object_get(player->playbin, "volume", &volume, NULL);
+        player->volume = volume;
+    }
     
-    gdouble volume;
-    g_object_get(player->playbin, "volume", &volume, NULL);
-    player->volume = volume;
-    
-    return volume;
+    return player->volume;
 }
 
 /**
  * @brief 设置静音
  */
 MediaErrorCode player_set_mute(MediaPlayer *player, int mute) {
-    if (player == NULL || player->playbin == NULL) {
+    if (player == NULL) {
         return MEDIA_ERROR_INVALID_PARAM;
     }
-    
-    g_object_set(player->playbin, "mute", mute ? TRUE : FALSE, NULL);
-    player->mute = mute;
+
+    player->mute = mute ? 1 : 0;
+    if (player->playbin != NULL) {
+        g_object_set(player->playbin, "mute", player->mute ? TRUE : FALSE, NULL);
+    }
     
     return MEDIA_OK;
 }
@@ -714,15 +729,17 @@ MediaErrorCode player_set_mute(MediaPlayer *player, int mute) {
  * @brief 获取静音状态
  */
 int player_get_mute(MediaPlayer *player) {
-    if (player == NULL || player->playbin == NULL) {
+    if (player == NULL) {
         return 0;
     }
+
+    if (player->playbin != NULL) {
+        gboolean mute;
+        g_object_get(player->playbin, "mute", &mute, NULL);
+        player->mute = mute;
+    }
     
-    gboolean mute;
-    g_object_get(player->playbin, "mute", &mute, NULL);
-    player->mute = mute;
-    
-    return mute;
+    return player->mute;
 }
 
 /**
@@ -801,6 +818,8 @@ MediaErrorCode player_set_render_rect(MediaPlayer *player, const Rect *rect) {
  */
 MediaErrorCode player_get_frame(MediaPlayer *player, uint8_t *buffer, 
                                 int width, int height) {
+    (void)width;
+    (void)height;
     if (player == NULL || player->playbin == NULL || buffer == NULL) {
         return MEDIA_ERROR_INVALID_PARAM;
     }

@@ -45,10 +45,10 @@ int test_recorder_config(void) {
     RecorderConfig config;
     recorder_config_init(&config);
     
-    TEST_ASSERT(config.video_source == VIDEO_SOURCE_NONE, "Default video_source");
-    TEST_ASSERT(config.audio_source == AUDIO_SOURCE_NONE, "Default audio_source");
+    TEST_ASSERT(config.video_source == VIDEO_SOURCE_V4L2, "Default video_source");
+    TEST_ASSERT(config.audio_source == AUDIO_SOURCE_ALSA, "Default audio_source");
     TEST_ASSERT(config.container == CONTAINER_MP4, "Default container is MP4");
-    TEST_ASSERT(config.low_latency == 0, "Default low_latency");
+    TEST_ASSERT(config.low_latency == 1, "Default low_latency");
     
     return 0;
 }

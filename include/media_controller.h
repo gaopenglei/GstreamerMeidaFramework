@@ -12,6 +12,7 @@
 #include "recorder.h"
 #include "transcoder.h"
 #include "error.h"
+#include "logger.h"
 
 #ifdef __cplusplus
 extern "C" {

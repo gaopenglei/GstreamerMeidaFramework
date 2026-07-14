@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <glib.h>
 
 #include "media_controller.h"
 #include "logger.h"
@@ -19,6 +20,11 @@ static MediaController *g_controller = NULL;
 
 /* 运行标志 */
 static volatile int g_running = 1;
+
+static void process_main_context(void) {
+    while (g_main_context_iteration(NULL, FALSE)) {
+    }
+}
 
 /**
  * @brief 信号处理函数
@@ -217,20 +223,9 @@ static int play_media(MediaController *controller, const char *uri, int low_late
     if (controller == NULL || uri == NULL) {
         return -1;
     }
-    
-    /* 设置低延迟模式 */
-    if (low_latency) {
-        PlayerConfig config;
-        player_config_init(&config);
-        config.low_latency = 1;
-        config.buffer_duration = 200;  /* 200ms buffer */
-        
-        /* 重新创建播放器 */
-        MediaPlayer *player = controller_get_player(controller);
-        if (player != NULL) {
-            player_destroy(player);
-        }
-    }
+
+    /* 控制器当前默认启用低延迟；保留参数供后续运行时配置 API 使用。 */
+    (void)low_latency;
     
     MediaErrorCode ret = controller_play(controller, uri);
     if (ret != MEDIA_OK) {
@@ -243,6 +238,10 @@ static int play_media(MediaController *controller, const char *uri, int low_late
     
     /* 等待播放结束 */
     while (g_running && controller_get_state(controller) != MEDIA_STATE_EOS) {
+        process_main_context();
+        if (controller_get_state(controller) == MEDIA_STATE_ERROR) {
+            break;
+        }
         usleep(100000);  /* 100ms */
     }
     
@@ -320,6 +319,10 @@ static int record_media(MediaController *controller, const char *output_file,
     /* 等待录制结束 */
     int elapsed = 0;
     while (g_running && (duration == 0 || elapsed < duration)) {
+        process_main_context();
+        if (controller_get_state(controller) == MEDIA_STATE_ERROR) {
+            break;
+        }
         sleep(1);
         elapsed++;
         
@@ -406,8 +409,10 @@ static int transcode_media(MediaController *controller,
     /* 等待转码结束 */
     TranscodeProgress progress;
     while (g_running) {
+        process_main_context();
         MediaState state = controller_get_state(controller);
-        if (state == MEDIA_STATE_EOS || state == MEDIA_STATE_READY) {
+        if (state == MEDIA_STATE_EOS || state == MEDIA_STATE_READY ||
+            state == MEDIA_STATE_ERROR) {
             break;
         }
         

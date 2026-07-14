@@ -90,6 +90,15 @@ MediaErrorCode player_set_callbacks(MediaPlayer *player, const PlayerCallbacks *
 MediaErrorCode player_open(MediaPlayer *player, const char *uri);
 
 /**
+ * @brief 设置播放器媒体 URI
+ * @details 此函数是 player_open 的兼容别名；会关闭当前媒体后打开新媒体。
+ * @param player 播放器指针
+ * @param uri 媒体URI (文件路径或网络URL)
+ * @return 成功返回 MEDIA_OK
+ */
+MediaErrorCode player_set_uri(MediaPlayer *player, const char *uri);
+
+/**
  * @brief 关闭媒体文件
  * @param player 播放器指针
  * @return 成功返回 MEDIA_OK

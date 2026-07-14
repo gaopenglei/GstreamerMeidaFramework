@@ -9,6 +9,8 @@
 #include <gst/gst.h>
 #include <gst/pbutils/pbutils.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -49,6 +51,14 @@ static void pad_added_handler(GstElement *src, GstPad *new_pad, gpointer data);
 static GstElement *create_video_encoder(VideoCodec codec, const VideoParams *params);
 static GstElement *create_audio_encoder(AudioCodec codec, const AudioParams *params);
 static GstElement *create_muxer(ContainerFormat format);
+
+static GstPad *request_muxer_pad(GstElement *muxer, const char *name) {
+#if GST_CHECK_VERSION(1, 20, 0)
+    return gst_element_request_pad_simple(muxer, name);
+#else
+    return gst_element_get_request_pad(muxer, name);
+#endif
+}
 
 /**
  * @brief 初始化转码器配置为默认值
@@ -244,6 +254,7 @@ static GstElement *create_muxer(ContainerFormat format) {
  * @brief GStreamer 消息总线回调
  */
 static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
+    (void)bus;
     MediaTranscoder *transcoder = (MediaTranscoder *)data;
     
     switch (GST_MESSAGE_TYPE(message)) {
@@ -291,6 +302,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             if (GST_MESSAGE_SRC(message) == GST_OBJECT(transcoder->pipeline)) {
                 GstState old_state, new_state, pending_state;
                 gst_message_parse_state_changed(message, &old_state, &new_state, &pending_state);
+                (void)pending_state;
                 
                 LOG_DEBUG("Transcoder state changed: %s -> %s",
                          gst_element_state_get_name(old_state),
@@ -370,6 +382,7 @@ static gboolean progress_callback(gpointer data) {
  * @brief pad 添加处理器
  */
 static void pad_added_handler(GstElement *src, GstPad *new_pad, gpointer data) {
+    (void)src;
     MediaTranscoder *transcoder = (MediaTranscoder *)data;
     GstCaps *caps = gst_pad_get_current_caps(new_pad);
     GstStructure *str;
@@ -417,6 +430,8 @@ static void pad_added_handler(GstElement *src, GstPad *new_pad, gpointer data) {
  * @brief 创建转码器
  */
 MediaTranscoder *transcoder_create(const TranscoderConfig *config) {
+    gst_init(NULL, NULL);
+
     MediaTranscoder *transcoder = (MediaTranscoder *)malloc(sizeof(MediaTranscoder));
     if (transcoder == NULL) {
         LOG_ERROR("Failed to allocate memory for transcoder");
@@ -466,6 +481,10 @@ void transcoder_destroy(MediaTranscoder *transcoder) {
         }
         if (transcoder->progress_id > 0) {
             g_source_remove(transcoder->progress_id);
+        }
+        if (transcoder->bus != NULL) {
+            gst_object_unref(transcoder->bus);
+            transcoder->bus = NULL;
         }
         
         gst_object_unref(transcoder->pipeline);
@@ -578,7 +597,7 @@ static MediaErrorCode build_pipeline(MediaTranscoder *transcoder) {
         }
         
         /* 链接视频编码器到复用器 */
-        GstPad *video_pad = gst_element_get_request_pad(transcoder->muxer, "video_%u");
+        GstPad *video_pad = request_muxer_pad(transcoder->muxer, "video_%u");
         GstPad *enc_src = gst_element_get_static_pad(transcoder->video_enc, "src");
         if (gst_pad_link(enc_src, video_pad) != GST_PAD_LINK_OK) {
             LOG_ERROR("Failed to link video encoder to muxer");
@@ -605,7 +624,7 @@ static MediaErrorCode build_pipeline(MediaTranscoder *transcoder) {
         }
         
         /* 链接音频编码器到复用器 */
-        GstPad *audio_pad = gst_element_get_request_pad(transcoder->muxer, "audio_%u");
+        GstPad *audio_pad = request_muxer_pad(transcoder->muxer, "audio_%u");
         GstPad *enc_src = gst_element_get_static_pad(transcoder->audio_enc, "src");
         if (gst_pad_link(enc_src, audio_pad) != GST_PAD_LINK_OK) {
             LOG_ERROR("Failed to link audio encoder to muxer");
@@ -637,7 +656,6 @@ static MediaErrorCode build_pipeline(MediaTranscoder *transcoder) {
     /* 设置消息总线 */
     transcoder->bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
     transcoder->bus_watch_id = gst_bus_add_watch(transcoder->bus, bus_callback, transcoder);
-    gst_object_unref(transcoder->bus);
     
     /* 设置进度更新定时器 */
     transcoder->progress_id = g_timeout_add(500, progress_callback, transcoder);
@@ -811,6 +829,8 @@ MediaErrorCode transcoder_stop(MediaTranscoder *transcoder) {
         g_source_remove(transcoder->progress_id);
         transcoder->progress_id = 0;
     }
+    gst_object_unref(transcoder->bus);
+    transcoder->bus = NULL;
     
     gst_object_unref(transcoder->pipeline);
     transcoder->pipeline = NULL;

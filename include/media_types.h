@@ -91,7 +91,8 @@ typedef enum {
     MEDIA_STATE_READY = 1,      /**< 就绪状态 */
     MEDIA_STATE_PAUSED = 2,     /**< 暂停状态 */
     MEDIA_STATE_PLAYING = 3,    /**< 播放状态 */
-    MEDIA_STATE_ERROR = 4       /**< 错误状态 */
+    MEDIA_STATE_ERROR = 4,      /**< 错误状态 */
+    MEDIA_STATE_EOS = 5         /**< 媒体流结束 */
 } MediaState;
 
 /**

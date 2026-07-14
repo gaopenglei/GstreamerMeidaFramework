@@ -12,6 +12,21 @@
 /* 全局日志记录器实例 */
 Logger *g_logger = NULL;
 
+void logger_config_init(LoggerConfig *config) {
+    if (config == NULL) {
+        return;
+    }
+
+    memset(config, 0, sizeof(*config));
+    config->min_level = LOG_LEVEL_INFO;
+    config->target = LOG_TARGET_CONSOLE;
+    config->max_file_size = 10 * 1024 * 1024;
+    config->max_backup = 5;
+    config->show_timestamp = 1;
+    config->show_location = 1;
+    config->show_thread_id = 1;
+}
+
 /**
  * @brief 获取日志级别字符串
  */
@@ -131,7 +146,7 @@ int logger_rotate(void) {
 /**
  * @brief 初始化日志记录器
  */
-int logger_init(const LoggerConfig *config, const char *module_name) {
+int logger_init(const LoggerConfig *config) {
     /* 分配日志记录器内存 */
     if (g_logger == NULL) {
         g_logger = (Logger *)malloc(sizeof(Logger));
@@ -145,22 +160,11 @@ int logger_init(const LoggerConfig *config, const char *module_name) {
     if (config != NULL) {
         memcpy(&g_logger->config, config, sizeof(LoggerConfig));
     } else {
-        /* 默认配置 */
-        g_logger->config.min_level = LOG_LEVEL_INFO;
-        g_logger->config.target = LOG_TARGET_CONSOLE;
-        g_logger->config.max_file_size = 10 * 1024 * 1024; /* 10MB */
-        g_logger->config.max_backup = 5;
-        g_logger->config.show_timestamp = 1;
-        g_logger->config.show_location = 1;
-        g_logger->config.show_thread_id = 1;
+        logger_config_init(&g_logger->config);
     }
     
     /* 设置模块名称 */
-    if (module_name != NULL) {
-        strncpy(g_logger->module_name, module_name, sizeof(g_logger->module_name) - 1);
-    } else {
-        strcpy(g_logger->module_name, "MEDIA_FW");
-    }
+    strcpy(g_logger->module_name, "MEDIA_FW");
     
     /* 初始化互斥锁 */
     pthread_mutex_init(&g_logger->mutex, NULL);

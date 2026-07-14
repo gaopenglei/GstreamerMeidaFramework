@@ -5,6 +5,7 @@
 
 #include "media_types.h"
 #include <string.h>
+#include <strings.h>
 
 /**
  * @brief 获取视频编解码格式字符串
@@ -125,6 +126,8 @@ const char *media_state_to_string(MediaState state) {
             return "playing";
         case MEDIA_STATE_ERROR:
             return "error";
+        case MEDIA_STATE_EOS:
+            return "eos";
         default:
             return "unknown";
     }
