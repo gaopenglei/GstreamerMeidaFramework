@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(gstreamer_media_framework VERSION 1.0.0 LANGUAGES C)
 
-# 学习阶段：0=M0 工程基线，1=M1 GStreamer 基础机制
+# 学习阶段：0=M0 工程基线，1=M1 基础机制，2=M2 核心模块重构
 set(MEDIA_FRAMEWORK_STAGE "0" CACHE STRING "Learning stage to build (0 or higher)")
 if(NOT MEDIA_FRAMEWORK_STAGE MATCHES "^[0-9]+$")
     message(FATAL_ERROR "MEDIA_FRAMEWORK_STAGE must be a non-negative integer")
@@ -46,11 +46,19 @@ set(CORE_SOURCES
     src/core/media_controller.c
 )
 
-set(MODULE_SOURCES
-    src/modules/player.c
-    src/modules/recorder.c
-    src/modules/transcoder.c
-)
+if(MEDIA_FRAMEWORK_STAGE GREATER_EQUAL 2)
+    set(MODULE_SOURCES
+        src/stage2/player.c
+        src/stage2/recorder.c
+        src/stage2/transcoder.c
+    )
+else()
+    set(MODULE_SOURCES
+        src/modules/player.c
+        src/modules/recorder.c
+        src/modules/transcoder.c
+    )
+endif()
 
 set(UTIL_SOURCES
     src/utils/logger.c
@@ -124,6 +132,14 @@ endif()
 if(MEDIA_FRAMEWORK_STAGE GREATER_EQUAL 1)
     add_subdirectory(examples/stage1)
     message(STATUS "  Stage 1 guide: ${CMAKE_SOURCE_DIR}/docs/STAGE1.md")
+endif()
+
+if(MEDIA_FRAMEWORK_STAGE GREATER_EQUAL 2)
+    if(BUILD_TESTS)
+        add_subdirectory(tests/stage2)
+    endif()
+    message(STATUS "  Stage 2 modules: ${CMAKE_SOURCE_DIR}/src/stage2")
+    message(STATUS "  Stage 2 guide: ${CMAKE_SOURCE_DIR}/docs/STAGE2.md")
 endif()
 
 # 打印配置信息
